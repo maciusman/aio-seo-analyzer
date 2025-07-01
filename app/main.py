@@ -1,7 +1,17 @@
 import streamlit as st
 import pandas as pd
 import json
-from app.analysis_engine import run_full_analysis, init_db
+import sys
+import os
+
+# Dodaj główny katalog projektu (nadrzędny do 'app') do sys.path
+# aby umożliwić importy z 'app.'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app.analysis_engine import run_full_analysis, init_db, DEFAULT_LLM_MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS
 from app.db_handler import get_serp_results_by_keyword # Do wyświetlania historii
 
 # Inicjalizacja bazy danych przy starcie aplikacji (jeśli nie istnieje)
