@@ -14,11 +14,7 @@ if project_root not in sys.path:
 from app.analysis_engine import run_full_analysis, init_db, DEFAULT_LLM_MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS
 from app.db_handler import get_serp_results_by_keyword # Do wyświetlania historii
 
-# Inicjalizacja bazy danych przy starcie aplikacji (jeśli nie istnieje)
-try:
-    init_db()
-except Exception as e:
-    st.error(f"Błąd inicjalizacji bazy danych: {e}")
+# Funkcja init_db() będzie teraz wywoływana wewnątrz main(), tylko raz na sesję.
 
 def display_analysis_results(results):
     """Wyświetla wyniki analizy LLM w sposób ustrukturyzowany."""
@@ -186,10 +182,22 @@ def generate_text_report(analysis_results):
 
 def main():
     st.set_page_config(page_title="Analizator AI Overview", layout="wide")
+
+    # Inicjalizacja bazy danych TYLKO RAZ na sesję
+    if 'db_initialized' not in st.session_state:
+        try:
+            init_db() # Wywołanie funkcji z db_handler.py
+            st.session_state.db_initialized = True
+            print("Database initialized for this session via main.py.") # Log tylko przy pierwszym razie
+        except Exception as e:
+            st.error(f"Krytyczny błąd inicjalizacji bazy danych: {e}")
+            st.session_state.db_initialized = False # Oznacz jako nieudaną
+            return # Zakończ, jeśli baza nie działa
+
     st.title("🔍 Analizator AI Overview & SERP")
     st.markdown("Wprowadź dane, aby przeanalizować obecność w AI Overview i uzyskać rekomendacje.")
 
-    # Inicjalizacja stanu sesji
+    # Inicjalizacja pozostałych elementów stanu sesji
     if 'analysis_results' not in st.session_state:
         st.session_state.analysis_results = None
     if 'last_keyword' not in st.session_state:
