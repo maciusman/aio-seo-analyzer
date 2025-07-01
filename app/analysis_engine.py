@@ -15,7 +15,21 @@ except ValueError as e:
     serp_client = None
     llm_client = None
 
-def run_full_analysis(keyword: str, client_domain: str, client_industry: str, lang: str = "pl", country_code: str = "PL"):
+DEFAULT_LLM_MODEL = "anthropic/claude-3.5-sonnet" # Domyślny model, jeśli nie zostanie wybrany inny
+DEFAULT_TEMPERATURE = 0.5
+DEFAULT_MAX_TOKENS = 4096
+
+
+def run_full_analysis(
+    keyword: str,
+    client_domain: str,
+    client_industry: str,
+    lang: str = "pl",
+    country_code: str = "PL",
+    llm_model_id: str = DEFAULT_LLM_MODEL,
+    llm_temperature: float = DEFAULT_TEMPERATURE,
+    llm_max_tokens: int = DEFAULT_MAX_TOKENS
+    ):
     """
     Orkiestruje cały proces analizy:
     1. Pobiera dane z SerpData.
@@ -82,10 +96,16 @@ def run_full_analysis(keyword: str, client_domain: str, client_industry: str, la
     # 5. Wyślij prompt do OpenRouter
     print("Krok 5: Wysyłanie promptu do OpenRouter...")
     # Użyjemy `analyze_json_with_model` oczekując odpowiedzi JSON
-    llm_response = llm_client.analyze_json_with_model(final_llm_prompt)
+    print(f"Krok 5: Wysyłanie promptu do OpenRouter (Model: {llm_model_id}, Temp: {llm_temperature}, MaxTokens: {llm_max_tokens})...")
+    llm_response = llm_client.analyze_json_with_model(
+        prompt_content=final_llm_prompt,
+        model=llm_model_id,
+        temperature=llm_temperature,
+        max_tokens=llm_max_tokens
+    )
 
     if not llm_response or llm_response.get("error"):
-        print(f"Nie udało się uzyskać poprawnej odpowiedzi od LLM. Response: {llm_response}")
+        print(f"Nie udało się uzyskać poprawnej odpowiedzi od LLM ({llm_model_id}). Response: {llm_response}")
         return {"error": "LLM analysis failed", "details": llm_response}
 
     print("Odpowiedź LLM otrzymana.")
@@ -107,13 +127,23 @@ def run_full_analysis(keyword: str, client_domain: str, client_industry: str, la
     analysis_db_id = store_llm_analysis(
         serp_result_id=serp_db_id,
         analysis_type="ai_overview_analysis_v1", # Wersjonowanie typu analizy
-        llm_model=llm_client.analyze_json_with_model.__defaults__[0], # Pobiera domyślny model z sygnatury funkcji
+        llm_model=llm_model_id, # Zapisujemy faktycznie użyty model
         insights=llm_analysis_content, # Cały sparsowany JSON jako insights
         recommendations=llm_analysis_content.get("actionable_recommendations", {}) # Lub konkretna część
     )
-    print(f"Analiza LLM zapisana do bazy z ID: {analysis_db_id}")
+    print(f"Analiza LLM (model: {llm_model_id}) zapisana do bazy z ID: {analysis_db_id}")
 
     print("Analiza zakończona pomyślnie.")
+
+    # Dodajemy informację o użytym modelu do zwracanych wyników
+    # Można to zrobić lepiej, np. poprzez dedykowany obiekt odpowiedzi, ale na razie proste dodanie do słownika
+    if isinstance(llm_analysis_content, dict):
+        llm_analysis_content["llm_model_used"] = llm_model_id
+        llm_analysis_content["llm_temperature_used"] = llm_temperature
+        llm_analysis_content["llm_max_tokens_used"] = llm_max_tokens
+        # Można też dodać datę analizy itp.
+        # llm_analysis_content["analysis_timestamp"] = datetime.now().isoformat()
+
     return llm_analysis_content
 
 
@@ -126,11 +156,16 @@ if __name__ == '__main__':
     test_keyword = "narzędzia do marketingu online"
     test_client_domain = "mojadomena.pl" # Zmień na domenę, którą chcesz analizować
     test_client_industry = "Marketing cyfrowy dla MŚP"
+    test_llm_model = "anthropic/claude-3-haiku-20240307" # Przykładowy, inny model do testów
+    # test_llm_model = DEFAULT_LLM_MODEL # Można też testować z domyślnym
 
-    print(f"Uruchamianie testowej analizy dla: '{test_keyword}', domena: '{test_client_domain}'")
+    print(f"Uruchamianie testowej analizy dla: '{test_keyword}', domena: '{test_client_domain}', model LLM: {test_llm_model}")
 
     if not serp_client or not llm_client:
         print("Nie można uruchomić testu, ponieważ klienci API nie są skonfigurowani.")
+        print("Upewnij się, że masz plik .env z SERPDATA_API_KEY i OPENROUTER_API_KEY.")
+    elif not llm_client.get_available_models(): # Sprawdzenie czy są dostępne modele
+        print(f"Nie można uruchomić testu, brak dostępnych modeli LLM z OpenRouter lub błąd API.")
         print("Upewnij się, że masz plik .env z SERPDATA_API_KEY i OPENROUTER_API_KEY.")
     else:
         analysis_result = run_full_analysis(test_keyword, test_client_domain, test_client_industry, lang="pl", country_code="PL")

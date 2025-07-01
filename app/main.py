@@ -27,6 +27,12 @@ def display_analysis_results(results):
     st.write(f"**Zapytanie:** {query_summary.get('query', 'N/A')}")
     st.write(f"**Domena Klienta:** {query_summary.get('client_domain', 'N/A')}")
     st.write(f"**Branża Klienta:** {query_summary.get('client_industry', 'N/A')}")
+
+    if results.get("llm_model_used"):
+        st.write(f"**Model LLM:** {results.get('llm_model_used')}")
+        st.write(f"**Temperatura:** {results.get('llm_temperature_used', 'N/A')}")
+        st.write(f"**Maks. tokenów:** {results.get('llm_max_tokens_used', 'N/A')}")
+
     st.write(f"**Klient w AI Overview:** {'Tak' if query_summary.get('client_present_in_ai_overview') else 'Nie'}")
     st.write(f"**Klient w Top 10 Organicznych:** {'Tak' if query_summary.get('client_present_in_top_10_organic') else 'Nie'}")
 
@@ -99,6 +105,13 @@ def generate_text_report(analysis_results):
     report_lines.append(f"- **Zapytanie:** {query_summary.get('query', 'N/A')}")
     report_lines.append(f"- **Domena Klienta:** {query_summary.get('client_domain', 'N/A')}")
     report_lines.append(f"- **Branża Klienta:** {query_summary.get('client_industry', 'N/A')}")
+    # Dodajemy informację o użytym modelu, jeśli jest dostępna w wynikach.
+    # Zakładając, że `llm_model_id` będzie dostępne w `query_summary` lub bezpośrednio w `analysis_results`
+    # Ta informacja jest teraz dodawana w `run_full_analysis`
+    if analysis_results.get("llm_model_used"):
+        report_lines.append(f"- **Model LLM użyty:** {analysis_results.get('llm_model_used')}")
+        report_lines.append(f"- **Temperatura:** {analysis_results.get('llm_temperature_used', 'N/A')}")
+        report_lines.append(f"- **Maks. tokenów:** {analysis_results.get('llm_max_tokens_used', 'N/A')}")
     report_lines.append(f"- **Klient w AI Overview:** {'Tak' if query_summary.get('client_present_in_ai_overview') else 'Nie'}")
     report_lines.append(f"- **Klient w Top 10 Organicznych:** {'Tak' if query_summary.get('client_present_in_top_10_organic') else 'Nie'}")
     report_lines.append("\n")
@@ -173,19 +186,82 @@ def main():
         st.session_state.last_keyword = ""
     if 'error_message' not in st.session_state:
         st.session_state.error_message = None
+    if 'available_llm_models' not in st.session_state:
+        st.session_state.available_llm_models = []
+    if 'default_llm_model_id' not in st.session_state:
+        st.session_state.default_llm_model_id = "anthropic/claude-3.5-sonnet" # Domyślny, jeśli pobieranie zawiedzie
+
+    # Pobierz listę modeli LLM przy pierwszym ładowaniu (lub jeśli jest pusta)
+    # Robimy to tutaj, aby uniknąć wielokrotnego pobierania przy każdym przeładowaniu UI
+    if not st.session_state.available_llm_models:
+        try:
+            from app.llm_client import OpenRouterClient # Uniknięcie problemów z importem na górze pliku przed inicjalizacją .env
+            llm_api_client = OpenRouterClient()
+            models_data = llm_api_client.get_available_models()
+            if models_data:
+                # Tworzymy listę ID modeli, można też dodać bardziej przyjazne nazwy, jeśli są dostępne
+                st.session_state.available_llm_models = sorted([m.get("id") for m in models_data if m.get("id")])
+                # Ustaw domyślny model, jeśli jest na liście, w przeciwnym razie pierwszy z listy
+                if st.session_state.default_llm_model_id not in st.session_state.available_llm_models and st.session_state.available_llm_models:
+                    st.session_state.default_llm_model_id = st.session_state.available_llm_models[0]
+            else:
+                st.warning("Nie udało się pobrać listy modeli LLM z OpenRouter. Używany będzie model domyślny.")
+        except Exception as e:
+            st.error(f"Błąd podczas pobierania listy modeli LLM: {e}")
+            # Zapewnij, że available_llm_models jest listą, nawet jeśli pusta
+            if not isinstance(st.session_state.available_llm_models, list):
+                 st.session_state.available_llm_models = []
 
 
     with st.sidebar:
-        st.header("Dane Wejściowe")
-        keyword = st.text_input("Słowo kluczowe do analizy", placeholder="np. najlepsze oprogramowanie CRM")
-        client_domain = st.text_input("Domena klienta", placeholder="np. mojafirma.pl")
-        client_industry = st.text_input("Branża klienta", placeholder="np. Oprogramowanie SaaS")
+        st.header("🛠️ Panel Sterowania Analizą")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            search_lang = st.selectbox("Język wyszukiwania", ["pl", "en", "de", "es", "fr"], index=0)
-        with col2:
-            search_country = st.selectbox("Kraj wyszukiwania", ["PL", "US", "DE", "ES", "FR", "GB"], index=0)
+        with st.expander("Podstawowe Dane Wejściowe", expanded=True):
+            keyword = st.text_input("Słowo kluczowe do analizy", placeholder="np. najlepsze oprogramowanie CRM")
+            client_domain = st.text_input("Domena klienta", placeholder="np. mojafirma.pl")
+            client_industry = st.text_input("Branża klienta", placeholder="np. Oprogramowanie SaaS")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                search_lang = st.selectbox("Język wyszukiwania", ["pl", "en", "de", "es", "fr"], index=0, key="search_lang")
+            with col2:
+                search_country = st.selectbox("Kraj wyszukiwania", ["PL", "US", "DE", "ES", "FR", "GB"], index=0, key="search_country")
+
+        with st.expander("⚙️ Konfiguracja Modelu LLM"):
+            if st.session_state.available_llm_models:
+                try:
+                    # Sprawdź, czy domyślny model jest na liście, jeśli nie, ustaw pierwszy dostępny
+                    current_default_index = st.session_state.available_llm_models.index(st.session_state.default_llm_model_id) \
+                        if st.session_state.default_llm_model_id in st.session_state.available_llm_models \
+                        else 0
+                except ValueError: # Jeśli default_llm_model_id nie ma na liście
+                    current_default_index = 0
+
+                selected_llm_model = st.selectbox(
+                    "Wybierz model LLM",
+                    options=st.session_state.available_llm_models,
+                    index=current_default_index,
+                    key="llm_model_select",
+                    help="Lista modeli pobierana z OpenRouter. Wybierz model do analizy."
+                )
+            else:
+                st.info("Ładowanie listy modeli LLM lub błąd pobierania. Używany model domyślny.")
+                selected_llm_model = st.text_input("ID Modelu LLM (jeśli lista niezaładowana)", value=st.session_state.default_llm_model_id, key="llm_model_manual")
+
+            llm_temperature = st.slider(
+                "Temperatura LLM",
+                min_value=0.0, max_value=2.0,
+                value=0.5, step=0.1,
+                key="llm_temp",
+                help="Kreatywność modelu. Niższe wartości = bardziej deterministyczne odpowiedzi."
+            )
+            llm_max_tokens = st.number_input(
+                "Maks. tokenów LLM",
+                min_value=512, max_value=16384, # Zakres może zależeć od modelu
+                value=4096, step=256,
+                key="llm_max_tokens",
+                help="Maksymalna długość odpowiedzi modelu. Dostosuj w zależności od potrzeb i możliwości modelu."
+            )
 
         analyze_button = st.button("🚀 Rozpocznij Analizę", type="primary", use_container_width=True)
 
@@ -197,14 +273,21 @@ def main():
             else:
                 st.session_state.error_message = None
                 st.session_state.last_keyword = keyword
-                with st.spinner(f"Trwa analiza dla słowa kluczowego: '{keyword}'... To może potrwać kilka minut."):
+                # Użyj wybranego modelu lub domyślnego, jeśli lista nie jest dostępna
+                model_to_use = selected_llm_model if st.session_state.available_llm_models else st.session_state.default_llm_model_id
+
+                spinner_message = f"Trwa analiza dla słowa kluczowego: '{keyword}' przy użyciu modelu: '{model_to_use}'... To może potrwać kilka minut."
+                with st.spinner(spinner_message):
                     try:
                         results = run_full_analysis(
-                            keyword,
-                            client_domain,
-                            client_industry,
+                            keyword=keyword,
+                            client_domain=client_domain,
+                            client_industry=client_industry,
                             lang=search_lang,
-                            country_code=search_country
+                            country_code=search_country,
+                            llm_model_id=model_to_use,
+                            llm_temperature=llm_temperature,
+                            llm_max_tokens=llm_max_tokens
                         )
                         st.session_state.analysis_results = results
                         if results and results.get("error"):
@@ -218,7 +301,7 @@ def main():
                         st.session_state.error_message = f"Nieoczekiwany błąd: {e}"
 
         st.markdown("---")
-        st.info("Pamiętaj, aby w pliku `.env` umieścić swoje klucze API dla `SERPDATA_API_KEY` i `OPENROUTER_API_KEY`.")
+        st.caption("Upewnij się, że w pliku `.env` znajdują się poprawne klucze API dla `SERPDATA_API_KEY` oraz `OPENROUTER_API_KEY`.")
 
 
     if st.session_state.error_message and not st.session_state.analysis_results:

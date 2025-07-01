@@ -79,7 +79,7 @@ class OpenRouterClient:
             "messages": [{"role": "user", "content": prompt_content}],
             "max_tokens": max_tokens,
             "temperature": temperature,
-            # "response_format": {"type": "json_object"} # Uncomment if model supports it via OpenAI spec
+            # "response_format": {"type": "json_object"} # Uncomment if model supports it via OpenAI spec, some models might need this
         }
 
         try:
@@ -87,8 +87,7 @@ class OpenRouterClient:
             response.raise_for_status()
 
             raw_response_text = response.text
-            # Try to find JSON within ```json ... ``` if present
-            if "```json" in raw_response_text:
+            if "```json" in raw_response_text: # Handle markdown-wrapped JSON
                 json_match = re.search(r"```json\s*([\s\S]*?)\s*```", raw_response_text)
                 if json_match:
                     raw_response_text = json_match.group(1)
@@ -96,57 +95,103 @@ class OpenRouterClient:
             try:
                 return json.loads(raw_response_text)
             except json.JSONDecodeError:
-                print("Error decoding JSON response from OpenRouter.")
+                print(f"Error decoding JSON response from OpenRouter for model {model}.")
                 print("Raw response text (after potential ```json extraction):", raw_response_text)
-                # Fallback: Return the raw text wrapped in an error structure
                 return {"error": "JSONDecodeError", "message": "Failed to decode JSON from model response.", "raw_response": response.text}
 
         except requests.exceptions.HTTPError as e:
-            print(f"HTTP error communicating with OpenRouter: {e.response.status_code} - {e.response.text}")
+            error_message = f"HTTP error {e.response.status_code} for model {model}: {e.response.text if e.response else str(e)}"
+            print(error_message)
             return {"error": "HTTPError", "status_code": e.response.status_code, "message": str(e), "raw_response": e.response.text if e.response else str(e)}
         except requests.exceptions.RequestException as e:
-            print(f"Request error communicating with OpenRouter: {e}")
+            print(f"Request error communicating with OpenRouter for model {model}: {e}")
             return {"error": "RequestException", "message": str(e)}
         except Exception as e:
-            print(f"An unexpected error occurred in OpenRouterClient: {e}")
+            print(f"An unexpected error occurred in OpenRouterClient for model {model}: {e}")
             return {"error": "UnexpectedException", "message": str(e)}
 
+    def get_available_models(self):
+        """
+        Fetches the list of available models from OpenRouter.
+        Caches the result to avoid frequent API calls.
+        """
+        if hasattr(self, "_available_models") and self._available_models:
+            return self._available_models
 
-    def compare_models(self, prompt_content, models=["anthropic/claude-3.5-sonnet", "google/gemini-pro"]):
-        """
-        Sends the same prompt to multiple models and returns their responses for comparison.
-        """
-        results = {}
-        for model in models:
-            print(f"Querying model: {model}")
-            results[model] = self.analyze_with_model(prompt_content, model=model)
-        return results
+        try:
+            response = requests.get(f"{self.base_url}/models")
+            response.raise_for_status()
+            models_data = response.json()
+            # We are interested in model IDs, and perhaps their names for display
+            # Example structure of a model entry: {'id': '...', 'name': '...', ...}
+            self._available_models = models_data.get("data", [])
+            return self._available_models
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching available models from OpenRouter: {e}")
+            return [] # Return empty list on error
+        except Exception as e:
+            print(f"An unexpected error occurred while fetching models: {e}")
+            return []
+
+
+    # def compare_models(self, prompt_content, models=["anthropic/claude-3.5-sonnet", "google/gemini-pro"]):
+    #     """
+    #     Sends the same prompt to multiple models and returns their responses for comparison.
+    #     This method might be less used if users pick one model.
+    #     """
+    #     results = {}
+    #     for model_id in models: # Changed from 'model' to 'model_id' for clarity
+    #         print(f"Querying model: {model_id}")
+    #         # Assuming analyze_with_model is the general purpose one, not analyze_json_with_model
+    #         results[model_id] = self.analyze_with_model(prompt_content, model=model_id)
+    #     return results
 
 if __name__ == '__main__':
-    # Example usage (for testing purposes)
     if not OPENROUTER_API_KEY:
         print("Please set your OPENROUTER_API_KEY in a .env file to run this test.")
     else:
         client = OpenRouterClient()
-        sample_prompt = "What are the key benefits of using AI in SEO analysis?"
 
-        print(f"\n--- Testing single model analysis (Claude 3.5 Sonnet) ---")
-        single_analysis = client.analyze_with_model(sample_prompt)
-        if single_analysis and single_analysis.get("choices"):
-            print("Successfully received analysis:")
-            print(single_analysis["choices"][0]["message"]["content"][:200] + "...") # Print first 200 chars
+        print("\n--- Testing fetching available models ---")
+        models = client.get_available_models()
+        if models:
+            print(f"Successfully fetched {len(models)} models.")
+            # Print details of a few models
+            for m in models[:3]:
+                 print(f"  ID: {m.get('id')}, Name: {m.get('name')}, Context Length: {m.get('context_length')}")
+            # Example: find a specific model
+            default_model_id = "anthropic/claude-3.5-sonnet"
+            # Check if our default model is in the list
+            if any(m.get('id') == default_model_id for m in models):
+                print(f"\nDefault model '{default_model_id}' is available.")
+            else:
+                # If default is not available, pick the first one from the list for testing analyze_json_with_model
+                if models:
+                    default_model_id = models[0].get('id')
+                    print(f"\nDefault model not found, using first available model for testing: '{default_model_id}'")
+                else:
+                    print("\nNo models available to test analyze_json_with_model.")
+                    default_model_id = None
+
+            if default_model_id:
+                sample_prompt_json = """
+                Przeanalizuj poniższy tekst i zwróć informacje o sentymencie oraz kluczowych encjach.
+                Tekst: "Uwielbiam pracować z API OpenRouter, jest szybkie i niezawodne!"
+                Odpowiedz TYLKO w formacie JSON:
+                {
+                  "sentiment": "pozytywny" | "negatywny" | "neutralny",
+                  "entities": ["OpenRouter API"]
+                }
+                """
+                print(f"\n--- Testing single model JSON analysis ({default_model_id}) ---")
+                json_analysis = client.analyze_json_with_model(sample_prompt_json, model=default_model_id)
+
+                if json_analysis and not json_analysis.get("error"):
+                    print("Successfully received JSON analysis:")
+                    print(json.dumps(json_analysis, indent=2, ensure_ascii=False))
+                else:
+                    print("Failed to get JSON analysis or error in response.")
+                    if json_analysis:
+                        print("Response/Error details:", json_analysis)
         else:
-            print("Failed to get analysis or unexpected response format.")
-            if single_analysis:
-                print("Response received:", single_analysis)
-
-        # print(f"\n--- Testing model comparison ---")
-        # comparison_results = client.compare_models(sample_prompt)
-        # for model, result in comparison_results.items():
-        #     print(f"\nResponse from {model}:")
-        #     if result and result.get("choices"):
-        #         print(result["choices"][0]["message"]["content"][:200] + "...") # Print first 200 chars
-        #     else:
-        #         print("Failed to get analysis or unexpected response format for this model.")
-        #         if result:
-        #             print("Response received:", result)
+            print("Failed to fetch models or no models available.")
