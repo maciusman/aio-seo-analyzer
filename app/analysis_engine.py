@@ -49,28 +49,77 @@ def run_full_analysis(
 
     # 1. Pobierz dane z SerpData
     print("Krok 1: Pobieranie danych z SerpData...")
-    raw_serp_data = serp_client.search(keyword, lang=lang, country_code=country_code)
-    if not raw_serp_data or raw_serp_data.get("status") != "success":
-        print(f"Nie udało się pobrać danych z SerpData dla słowa kluczowego: {keyword}. Response: {raw_serp_data}")
-        return None
-    print("Dane z SerpData pobrane pomyślnie.")
+    raw_serp_data_response = serp_client.search(keyword, lang=lang, country_code=country_code)
+
+    # --- ULEPSZONA OBSŁUGA ODPOWIEDZI Z SERPDATA ---
+    if not raw_serp_data_response or not isinstance(raw_serp_data_response, dict):
+        err_msg = f"Nie udało się pobrać danych lub otrzymano niepoprawny format z SerpData dla słowa kluczowego: {keyword}. Response: {raw_serp_data_response}"
+        print(err_msg)
+        return {"error": "SerpData API communication failed", "details": err_msg, "raw_response": raw_serp_data_response}
+
+    # Sprawdzamy, czy nie ma błędu zwróconego przez SerpDataClient (np. HTTPError, RequestException)
+    if raw_serp_data_response.get("error_source"): # Klucz dodany w proponowanej modyfikacji SerpDataClient
+        print(f"Błąd klienta SerpData: {raw_serp_data_response.get('message')}. Pełna odpowiedź: {raw_serp_data_response}")
+        return {"error": f"SerpData Client Error: {raw_serp_data_response.get('message')}", "details": raw_serp_data_response}
+
+    # Analiza struktury odpowiedzi (na podstawie Twojego logu z błędem 'Out of proxy')
+    # Oczekiwana struktura sukcesu (nawet jeśli wyniki wyszukiwania mają wewnętrzny błąd)
+    # {'data': {'success': True, 'data': { 'results': {'success': True/False, ... }}}}
+
+    serp_api_meta = raw_serp_data_response.get('data', {})
+    actual_serp_content = serp_api_meta.get('data', {}) # To jest właściwa treść SERP
+
+    if not isinstance(serp_api_meta, dict) or not isinstance(actual_serp_content, dict):
+        err_msg = f"Nieoczekiwana główna struktura odpowiedzi z SerpData. Słowo kluczowe: {keyword}. Response: {raw_serp_data_response}"
+        print(err_msg)
+        return {"error": "Unexpected SerpData response structure", "details": err_msg, "raw_response": raw_serp_data_response}
+
+    if serp_api_meta.get('success') is not True:
+        message = serp_api_meta.get('message', 'Nieznany błąd na poziomie API SerpData (zewnętrzny success: false)')
+        print(f"Błąd API SerpData: {message}. Słowo kluczowe: {keyword}. Pełna odpowiedź: {raw_serp_data_response}")
+        return {"error": f"SerpData API error: {message}", "details": raw_serp_data_response}
+
+    # Sprawdzamy wewnętrzny obiekt 'results' w 'actual_serp_content'
+    serp_results_status = actual_serp_content.get('results', {})
+    if not isinstance(serp_results_status, dict):
+        err_msg = f"Brak obiektu 'results' w danych SERP lub niepoprawny typ. Słowo kluczowe: {keyword}. Response: {raw_serp_data_response}"
+        print(err_msg)
+        return {"error": "Missing or invalid 'results' object in SerpData", "details": err_msg, "raw_response": raw_serp_data_response}
+
+    if serp_results_status.get('success') is not True:
+        message = serp_results_status.get('message', 'Nieznany błąd wyszukiwania (wewnętrzny results.success: false)')
+        print(f"SerpData zgłosiło błąd wyszukiwania: \"{message}\". Słowo kluczowe: {keyword}. Pełna odpowiedź: {raw_serp_data_response}")
+        # Zwracamy konkretny błąd, aby UI mogło go wyświetlić
+        return {"error": f"SerpData Search Error: {message}", "details": raw_serp_data_response}
+
+    # Jeśli doszliśmy tutaj, to zarówno API SerpData odpowiedziało poprawnie,
+    # jak i wewnętrzne wyniki wyszukiwania wskazują na sukces.
+    # actual_serp_content zawiera teraz dane, które wcześniej były w raw_serp_data
+    raw_serp_data_to_process = actual_serp_content
+    print("Dane z SerpData pobrane i zweryfikowane pomyślnie.")
+    # --- KONIEC ULEPSZONEJ OBSŁUGI ODPOWIEDZI Z SERPDATA ---
 
     # 2. Zapisz dane SerpData do bazy
     print("Krok 2: Zapisywanie danych SERP do bazy...")
     keyword_id = store_keyword(keyword)
 
-    # Ekstrakcja specyficznych części JSONa do osobnych kolumn (zgodnie z db_handler)
-    # Te funkcje powinny być bardziej rozbudowane w utils.py lub tutaj, aby wyciągnąć dokładnie te dane
-    results_data = raw_serp_data.get("results", {})
+    results_data = raw_serp_data_to_process.get("results", {}) # Używamy zweryfikowanych danych
     ai_overview_sources = results_data.get("ai_overview", {}).get("sources", []) if results_data.get("ai_overview") else []
     organic_results = results_data.get("organic_results", [])
-    people_also_ask = results_data.get("people_also_ask", {}).get("questions", []) if results_data.get("people_also_ask") else []
-    related_searches = results_data.get("related_searches", {}).get("queries", []) if results_data.get("related_searches") else []
-    ads_data = results_data.get("snippets_data", {}).get("ads", []) if results_data.get("snippets_data") else []
+    people_also_ask_data = results_data.get("people_also_ask", {})
+    people_also_ask = people_also_ask_data.get("questions", []) if isinstance(people_also_ask_data, dict) else []
+
+    related_searches_data = results_data.get("related_searches", {})
+    related_searches = related_searches_data.get("queries", []) if isinstance(related_searches_data, dict) else []
+
+    # Sprawdzenie czy snippets_data istnieje przed próbą dostępu
+    snippets_data_node = results_data.get("snippets_data", {})
+    ads_data = snippets_data_node.get("ads", []) if isinstance(snippets_data_node, dict) else []
+
 
     serp_db_id = store_serp_data(
         keyword_id,
-        raw_serp_data, # Przechowujemy cały JSON
+        raw_serp_data_to_process, # Przechowujemy zweryfikowany i poprawny fragment JSON
         ai_overview_sources,
         organic_results,
         people_also_ask,
@@ -81,8 +130,8 @@ def run_full_analysis(
 
     # 3. Przetwórz dane SerpData dla LLM
     print("Krok 3: Przetwarzanie danych SERP dla LLM...")
-    # Używamy pełnego raw_serp_data, ponieważ parse_serp_data_for_llm oczekuje stringa JSON
-    parsed_serp_for_llm = parse_serp_data_for_llm(json.dumps(raw_serp_data))
+    # Używamy zweryfikowanych danych, przekształcając je z powrotem na string JSON dla parse_serp_data_for_llm
+    parsed_serp_for_llm = parse_serp_data_for_llm(json.dumps(raw_serp_data_to_process))
 
     # 4. Wygeneruj prompt
     print("Krok 4: Generowanie promptu dla LLM...")
