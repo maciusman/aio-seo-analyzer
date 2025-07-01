@@ -1,0 +1,5 @@
+streamlit
+requests
+pandas
+python-dotenv
+openai # Choć używamy OpenRouter, biblioteka openai może być przydatna dla typów danych lub przyszłych zmian
