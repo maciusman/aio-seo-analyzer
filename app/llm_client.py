@@ -86,18 +86,40 @@ class OpenRouterClient:
             response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=data)
             response.raise_for_status()
 
-            raw_response_text = response.text
-            if "```json" in raw_response_text: # Handle markdown-wrapped JSON
+            # POPRAWKA: Najpierw sparsuj OpenRouter API response, potem wyciągnij content
+            try:
+                api_response = response.json()
+                raw_response_text = api_response['choices'][0]['message']['content']
+                
+                print(f"DEBUG: OpenRouter API response structure OK")
+                print(f"DEBUG: Model content length: {len(raw_response_text)} chars")
+                
+            except (KeyError, IndexError, json.JSONDecodeError) as parse_error:
+                print(f"Error parsing OpenRouter API response structure: {parse_error}")
+                print("Raw response text:", response.text[:500] + "...")
+                return {"error": "APIResponseParseError", "message": f"Failed to parse OpenRouter response: {str(parse_error)}", "raw_response": response.text}
+
+            # Handle markdown-wrapped JSON (```json ... ```)
+            if "```json" in raw_response_text:
                 json_match = re.search(r"```json\s*([\s\S]*?)\s*```", raw_response_text)
                 if json_match:
+                    print("DEBUG: Found ```json wrapper, extracting content")
                     raw_response_text = json_match.group(1)
+                else:
+                    print("DEBUG: ```json found but regex didn't match")
+            else:
+                print("DEBUG: No ```json wrapper found, using content directly")
 
+            # Parse the actual JSON content
             try:
-                return json.loads(raw_response_text)
-            except json.JSONDecodeError:
+                parsed_json = json.loads(raw_response_text)
+                print("DEBUG: Successfully parsed JSON from model response")
+                return parsed_json
+            except json.JSONDecodeError as json_error:
                 print(f"Error decoding JSON response from OpenRouter for model {model}.")
-                print("Raw response text (after potential ```json extraction):", raw_response_text)
-                return {"error": "JSONDecodeError", "message": "Failed to decode JSON from model response.", "raw_response": response.text}
+                print(f"JSON decode error: {json_error}")
+                print("Raw response text (after potential ```json extraction):", raw_response_text[:500] + "...")
+                return {"error": "JSONDecodeError", "message": "Failed to decode JSON from model response.", "raw_response": raw_response_text}
 
         except requests.exceptions.HTTPError as e:
             error_message = f"HTTP error {e.response.status_code} for model {model}: {e.response.text if e.response else str(e)}"
