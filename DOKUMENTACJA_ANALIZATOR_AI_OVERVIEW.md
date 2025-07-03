@@ -23,10 +23,12 @@ Analiza przeprowadzana przez aplikację ma na celu:
 1.  **Zidentyfikowanie obecności w AI Overview**: Sprawdzenie, czy analizowana domena (lub jej konkurenci) pojawia się w sekcji AI Overview dla danego słowa kluczowego.
 2.  **Analiza źródeł AI Overview**: Zrozumienie, jakie strony i jakie treści są wykorzystywane przez Google do generowania AI Overview.
 3.  **Wykrywanie luk konkurencyjnych**: Wskazanie, gdzie konkurenci mają przewagę i jakie tematy lub typy treści są przez nich wykorzystywane do zdobywania widoczności w AI Overview.
-4.  **Identyfikacja możliwości treściowych**: Sugerowanie tematów, pytań (np. z sekcji "People Also Ask" - PAA) i formatów treści, które mogą pomóc w zdobyciu lub poprawie pozycji w AI Overview.
+4.  **Identyfikacja możliwości treściowych**: Sugerowanie tematów, pytań (wraz z **proponowanymi odpowiedziami** z sekcji "People Also Ask" - PAA) i formatów treści, które mogą pomóc w zdobyciu lub poprawie pozycji w AI Overview.
 5.  **Analiza krajobrazu konkurencji**: Określenie kluczowych konkurentów zarówno w AI Overview, jak i w tradycyjnych wynikach organicznych.
 6.  **Dostarczenie konkretnych rekomendacji**: Podanie listy działań (z priorytetami), które użytkownik może podjąć, aby poprawić swoją widoczność.
 7.  **Ocena ogólnej sytuacji**: Krótkie podsumowanie najważniejszych wniosków.
+8.  **Analiza intencji zapytania**: Określenie, czy intencja użytkownika jest informacyjna, komercyjna, transakcyjna czy nawigacyjna, co jest kluczowe dla dopasowania treści.
+9.  **Identyfikacja możliwości uzyskania przewagi strategicznej**: Proponowanie unikalnych kątów dla treści i kolejnych kroków w budowaniu autorytetu tematycznego.
 
 ### 1.4. Jakie problemy rozwiązuje aplikacja?
 
@@ -42,7 +44,7 @@ Analiza przeprowadzana przez aplikację ma na celu:
 
 Aplikacja składa się z kilku kluczowych modułów, które współpracują ze sobą:
 
-1.  **Interfejs Użytkownika (Streamlit)**: Plik `app/main.py`. Jest to główny punkt interakcji użytkownika z aplikacją. Pozwala na wprowadzanie danych, inicjowanie analizy i przeglądanie wyników.
+1.  **Interfejs Użytkownika (Streamlit)**: Plik `main.py`. Jest to główny punkt interakcji użytkownika z aplikacją. Pozwala na wprowadzanie danych, inicjowanie analizy i przeglądanie wyników.
 2.  **Klient API SerpData (`app/serp_client.py`)**: Odpowiada za komunikację z zewnętrznym serwisem `serpdata.io` w celu pobrania aktualnych danych z wyników wyszukiwania Google (SERP) dla zadanego słowa kluczowego, języka i kraju.
 3.  **Klient API OpenRouter (`app/llm_client.py`)**: Zarządza komunikacją z platformą `OpenRouter.ai`, która umożliwia dostęp do różnych modeli językowych (LLM) od różnych dostawców (np. OpenAI GPT, Anthropic Claude). Ten klient pobiera listę dostępnych modeli i wysyła do wybranego modelu przetworzone dane SERP w celu uzyskania analizy.
 4.  **Silnik Analizy (`app/analysis_engine.py`)**: Centralny moduł orkiestrujący cały proces. Koordynuje pracę pozostałych komponentów: pobiera dane przez `SerpDataClient`, przetwarza je, przygotowuje specjalny "prompt" (instrukcję) dla modelu LLM, wysyła go przez `OpenRouterClient`, odbiera odpowiedź LLM, a następnie zapisuje wyniki.
@@ -69,7 +71,7 @@ Aplikacja składa się z kilku kluczowych modułów, które współpracują ze s
     *   Silnik Analizy używa funkcji z `utils.py` do przetworzenia surowych danych SERP. Ekstrahowane są kluczowe informacje, takie jak:
         *   Źródła użyte w AI Overview (jeśli istnieje).
         *   Lista wyników organicznych.
-        *   Pytania z sekcji "People Also Ask" (PAA).
+        *   Pytania z sekcji "People Also Ask" (PAA) wraz z odpowiedziami.
         *   Powiązane wyszukiwania.
     *   Te przetworzone dane są następnie formatowane w czytelny tekst, który będzie częścią promptu dla LLM.
 6.  **Generowanie Promptu dla LLM**:
@@ -84,9 +86,9 @@ Aplikacja składa się z kilku kluczowych modułów, które współpracują ze s
     *   Silnik Analizy zapisuje odpowiedź LLM (wyniki analizy) do bazy danych SQLite, powiązując ją z odpowiednim rekordem SERP. Zapisywane jest również ID użytego modelu.
 10. **Wyświetlanie Wyników Użytkownikowi**:
     *   Wyniki analizy są przekazywane do interfejsu użytkownika (`main.py`).
-    *   Streamlit dynamicznie aktualizuje stronę, prezentując użytkownikowi przetworzone wyniki w czytelnych sekcjach (np. Podsumowanie, Analiza AI Overview, Rekomendacje).
-11. **Generowanie Raportu (opcjonalnie)**:
-    *   Użytkownik może kliknąć przycisk, aby wygenerować raport tekstowy (w formacie Markdown) zawierający wszystkie kluczowe informacje z analizy. Raport ten można skopiować lub pobrać jako plik `.txt`.
+    *   Streamlit dynamicznie aktualizuje stronę, prezentując użytkownikowi przetworzone wyniki w czytelnych, rozbudowanych sekcjach.
+11. **Eksport i Zarządzanie Raportem (opcjonalnie)**:
+    *   Użytkownik ma możliwość wygenerowania raportu tekstowego (`.txt`), interaktywnego raportu `HTML` oraz zapisania całej sesji analitycznej do pliku (`.pkl`) w celu późniejszego wczytania.
 
 Ten cykl powtarza się dla każdego nowego słowa kluczowego lub gdy użytkownik zdecyduje się ponownie przeanalizować to samo słowo kluczowe (np. po pewnym czasie, aby zobaczyć zmiany).
 
@@ -111,7 +113,7 @@ ANALIZATOR_AI_OVERVIEW/
 │
 ├── app/
 │   ├── __init__.py
-│   ├── main.py               # Główny plik aplikacji Streamlit
+│   ├── main.py               # Główny plik aplikacji Streamlit - UWAGA: ZMIANA W SPOSOBIE URUCHAMIANIA
 │   ├── analysis_engine.py    # Logika analizy
 │   ├── serp_client.py        # Klient API serpdata.io
 │   ├── llm_client.py         # Klient API OpenRouter.ai
@@ -123,7 +125,6 @@ ANALIZATOR_AI_OVERVIEW/
 ├── .env.template             # Szablon pliku konfiguracyjnego dla kluczy API
 └── (ewentualnie inne pliki, np. ta dokumentacja)
 ```
-
 1.  **Utwórz folder**: Na swoim komputerze utwórz nowy folder, w którym będziesz przechowywać aplikację, np. `C:\Analizator_AI_Overview` (Windows) lub `/home/uzytkownik/Analizator_AI_Overview` (Linux/macOS).
 2.  **Skopiuj pliki**: Rozpakuj archiwum lub skopiuj wszystkie pliki i foldery aplikacji (całą strukturę pokazaną powyżej) do tego nowo utworzonego folderu.
 
@@ -188,7 +189,7 @@ Po zakończeniu instalacji zależności, aplikacja jest prawie gotowa do uruchom
 2.  **(Jeśli używasz) Aktywuj środowisko wirtualne**: `venv\Scripts\activate` (Windows cmd), `source venv/bin/activate` (Linux/macOS).
 3.  **Uruchom aplikację Streamlit**: Wpisz w terminalu następującą komendę:
     ```bash
-    streamlit run app/main.py
+    streamlit run main.py
     ```
 4.  **Otwórz aplikację w przeglądarce**: Po chwili w terminalu powinny pojawić się informacje, a Twoja domyślna przeglądarka internetowa powinna automatycznie otworzyć nową kartę z działającą aplikacją. Adres URL będzie prawdopodobnie wyglądał tak: `http://localhost:8501`.
     *   Jeśli przeglądarka nie otworzy się automatycznie, skopiuj adres URL (np. `Local URL: http://localhost:8501`) wyświetlony w terminalu i wklej go ręcznie do paska adresu przeglądarki.
@@ -218,11 +219,11 @@ Aby ułatwić uruchamianie aplikacji na Windows bez każdorazowego wpisywania ko
     )
 
     echo Uruchamianie aplikacji Streamlit...
-    streamlit run app/main.py
+    streamlit run main.py
 
     REM Deaktywacja srodowiska wirtualnego po zamknieciu aplikacji (opcjonalne)
     IF EXIST venv\Scripts\deactivate.bat (
-        call venv\Scripts\deactivate.bat
+        call v.env\Scripts\deactivate.bat
     )
 
     pause
@@ -242,7 +243,7 @@ Aplikacja jest przygotowana do wdrożenia na platformach takich jak Streamlit Co
 
 1.  **Umieszczenia kodu w repozytorium Git**: Najlepiej na GitHub. Plik `.env` z kluczami API **nie powinien** być umieszczany w publicznym repozytorium.
 2.  **Konta na Streamlit Community Cloud**: Zarejestruj się na [share.streamlit.io](https://share.streamlit.io/).
-3.  **Wdrożenia aplikacji**: W panelu Streamlit Cloud wybierz "New app", połącz swoje konto GitHub, wybierz repozytorium i gałąź oraz wskaż główny plik aplikacji (`app/main.py`).
+3.  **Wdrożenia aplikacji**: W panelu Streamlit Cloud wybierz "New app", połącz swoje konto GitHub, wybierz repozytorium i gałąź oraz wskaż główny plik aplikacji (`main.py`).
 4.  **Konfiguracji Sekretów**: W zaawansowanych ustawieniach aplikacji w Streamlit Cloud dodaj swoje klucze API (`SERPDATA_API_KEY` i `OPENROUTER_API_KEY`) jako "Secrets". Aplikacja automatycznie je odczyta jako zmienne środowiskowe.
 
 Streamlit Community Cloud oferuje darmowy plan, który jest wystarczający do hostowania tej aplikacji dla celów demonstracyjnych lub małego użytku.
@@ -263,65 +264,38 @@ Panel boczny zawiera wszystkie opcje potrzebne do przeprowadzenia analizy.
     *   **Kraj wyszukiwania**: Wybierz z listy kraj, dla którego mają być symulowane wyniki wyszukiwania (np. `PL` dla Polski, `US` dla Stanów Zjednoczonych).
 
 2.  **Sekcja "Konfiguracja Modelu LLM"**:
-    *   **Wybierz model LLM**: Z rozwijanej listy wybierz model językowy, który ma być użyty do analizy. Lista modeli jest dynamicznie pobierana z OpenRouter. Różne modele mogą dawać różne wyniki, mieć różne ceny i ograniczenia. Przykładowe popularne modele to:
-        *   `anthropic/claude-3.5-sonnet` (dobra jakość, często zalecany jako domyślny)
-        *   `anthropic/claude-3-haiku` (szybszy i tańszy, dobra opcja na start)
-        *   `openai/gpt-4o` (bardzo zaawansowany model od OpenAI)
-        *   `google/gemini-pro`
-        *   Jeśli lista nie załaduje się poprawnie, pojawi się pole do ręcznego wpisania ID modelu.
-    *   **Temperatura LLM**: Suwak pozwalający ustawić "kreatywność" modelu.
-        *   Wartości bliższe `0.0` (np. `0.1` - `0.3`): Odpowiedzi będą bardziej deterministyczne, spójne i oparte na faktach. Zalecane do zadań analitycznych.
-        *   Wartości bliższe `1.0` (np. `0.7` - `1.0`): Odpowiedzi będą bardziej kreatywne, zróżnicowane, ale mogą być mniej precyzyjne.
-        *   Domyślna wartość to `0.5`, co jest dobrym kompromisem.
-    *   **Maks. tokenów LLM**: Liczba określająca maksymalną długość odpowiedzi, jaką może wygenerować model (zarówno prompt, jak i odpowiedź wliczają się w ogólny limit tokenów kontekstu modelu).
-        *   Większa wartość pozwala na bardziej rozbudowane analizy, ale może zwiększyć koszt (jeśli model jest płatny za tokeny) i czas odpowiedzi.
-        *   Mniejsza wartość może uciąć odpowiedź, jeśli analiza jest obszerna.
-        *   Domyślna wartość `4096` jest zazwyczaj wystarczająca dla tego typu analizy. Sprawdź limity konkretnych modeli na stronie OpenRouter.
+    *   **Wybierz model LLM**: Z rozwijanej listy wybierz model językowy, który ma być użyty do analizy. Lista modeli jest dynamicznie pobierana z OpenRouter.
+    *   **Temperatura LLM**: Suwak pozwalający ustawić "kreatywność" modelu (wartości `0.0`-`2.0`).
+    *   **Maks. tokenów LLM**: Liczba określająca maksymalną długość odpowiedzi.
 
 3.  **Przycisk "Rozpocznij Analizę"**: Po wypełnieniu wszystkich pól i ustawieniu parametrów, kliknij ten przycisk, aby rozpocząć proces analizy.
 
-4.  **Informacja o Kluczach API**: Przypomnienie o konieczności skonfigurowania kluczy API w pliku `.env`.
+4.  **Sekcja "🗄️ Zarządzanie Analizami"**:
+    *   **Przycisk "💾 Zapisz bieżącą analizę (.pkl)"**: Staje się aktywny po pomyślnym przeprowadzeniu analizy. Umożliwia pobranie pliku `.pkl` z pełnym stanem analizy na dysk.
+    *   **Przycisk "📂 Wczytaj analizę z pliku .pkl"**: Pozwala wybrać zapisany wcześniej plik `.pkl` z dysku, aby natychmiast odtworzyć historyczny raport bez ponoszenia kosztów API.
 
 ### 5.2. Główny Obszar Wyświetlania Wyników:
 
-Po kliknięciu "Rozpocznij Analizę", w głównym obszarze strony pojawi się informacja o trwającym procesie ("spinner"). Po zakończeniu analizy (co może potrwać od kilkunastu sekund do kilku minut, w zależności od szybkości API i modelu LLM), wyświetlone zostaną wyniki.
+Po zakończeniu analizy (co może potrwać od kilkunastu sekund do kilku minut), wyświetlone zostaną wyniki.
 
 **Struktura Wyświetlanych Wyników:**
 
 1.  **Nagłówek**: "Wyniki Analizy dla: '[Twoje Słowo Kluczowe]'"
-
-2.  **Sekcja "Podsumowanie Zapytania"**:
-    *   **Zapytanie**: Powtórzenie analizowanego słowa kluczowego.
-    *   **Domena Klienta**: Twoja domena.
-    *   **Branża Klienta**: Twoja branża.
-    *   **Model LLM**: ID modelu LLM użytego do tej konkretnej analizy.
-    *   **Temperatura**: Wartość temperatury użyta dla LLM.
-    *   **Maks. tokenów**: Maksymalna liczba tokenów ustawiona dla LLM.
-    *   **Klient w AI Overview**: "Tak" lub "Nie" – czy Twoja domena została znaleziona w źródłach AI Overview.
-    *   **Klient w Top 10 Organicznych**: "Tak" lub "Nie" – czy Twoja domena została znaleziona w pierwszych 10 organicznych wynikach wyszukiwania.
-
-3.  **Sekcja "Analiza AI Overview"**:
-    *   **Aktualne źródła w AI Overview**: Lista stron (tytuł i domena), które Google wykorzystało do wygenerowania odpowiedzi AI Overview. To Twoi bezpośredni konkurenci o miejsce w tym boksie.
-    *   **Możliwości dla klienta w AI Overview**: Konkretne sugestie od LLM, co możesz zrobić, aby Twoja strona pojawiła się w AI Overview (np. "Stwórz artykuł odpowiadający na pytanie X", "Dodaj sekcję FAQ na stronie Y").
-    *   **Sugerowane formaty treści**: Propozycje typów treści, które mogą być skuteczne w kontekście AI Overview (np. "Blog post", "FAQ page", "Infografika").
-
-4.  **Sekcja "Krajobraz Konkurencji"**:
-    *   **Kluczowi konkurenci w AI Overview**: Domeny konkurentów, którzy pojawiają się w AI Overview.
-    *   **Kluczowi konkurenci w wynikach organicznych**: Domeny konkurentów, którzy są wysoko w standardowych wynikach wyszukiwania.
-
+2.  **Sekcja "Podsumowanie Zapytania"**: Kluczowe informacje o zapytaniu, użytych parametrach i podstawowa ocena widoczności klienta.
+3.  **Sekcja "Analiza Intencji Zapytania"**: Określa, czy intencja użytkownika jest informacyjna, komercyjna, itp., wraz z uzasadnieniem od AI.
+4.  **Sekcja "Analiza AI Overview"**: Szczegółowe informacje o źródłach AI Overview i konkretne sugestie, jak się w nim pojawić.
 5.  **Sekcja "Analiza Luk w Treści"**:
-    *   **Pytania z PAA do zaadresowania**: Lista pytań z sekcji "People Also Ask" (Ludzie również pytają), na które Twoja strona mogłaby dostarczyć odpowiedzi, potencjalnie zwiększając szansę na pojawienie się w AI Overview lub jako "featured snippet".
-    *   **Możliwości z powiązanych wyszukiwań**: Lista tematów z sekcji "Related Searches" (Powiązane wyszukiwania), które wskazują na dodatkowe zainteresowania użytkowników i mogą być inspiracją dla nowych treści.
-
-6.  **Sekcja "Rekomendacje Działań"**:
-    *   Lista konkretnych, praktycznych rekomendacji podzielonych na priorytety (Priorytet 1, 2, 3). Są to działania, które powinieneś rozważyć w pierwszej kolejności.
-
-7.  **Sekcja "Ogólne Podsumowanie"**:
-    *   Krótkie, 2-3 zdaniowe podsumowanie całej analizy przygotowane przez LLM, wskazujące na najważniejsze wnioski i sugestie.
-
-8.  **Sekcja "Wygeneruj Raport Tekstowy"**:
-    *   **Przycisk "Generuj Raport do Skopiowania"**: Po kliknięciu, poniżej pojawi się pole tekstowe z całym raportem w formacie Markdown, gotowym do skopiowania.
-    *   **Przycisk "Pobierz Raport jako .txt"**: Umożliwia pobranie tego samego raportu jako pliku tekstowego na Twój komputer.
+    *   **Pytania z PAA do zaadresowania**: Interaktywna lista pytań z sekcji "People Also Ask". Każde pytanie można rozwinąć, aby zobaczyć **sugerowaną przez AI odpowiedź**, gotową do wykorzystania.
+    *   **Możliwości z powiązanych wyszukiwań**: Pomysły na nowe treści oparte na analizie powiązanych fraz.
+6.  **Sekcja "Możliwości Uzyskania Przewagi Strategicznej"**: Zaawansowana sekcja proponująca:
+    *   **Unikalny kąt dla treści**: Kreatywny pomysł na to, jak wyróżnić swoją treść na tle konkurencji.
+    *   **Propozycja następnego artykułu**: Sugestia, jaki kolejny temat warto poruszyć, aby budować autorytet w danej dziedzinie.
+7.  **Sekcja "Rekomendacje Działań"**: Lista konkretnych zadań do wykonania, podzielona na priorytety za pomocą interaktywnych zakładek.
+8.  **Sekcja "Ogólne Podsumowanie"**: Zwięzłe podsumowanie całej analizy od AI.
+9.  **Sekcja "Surowe dane SERP"**: Rozwijana sekcja (`expander`) pozwalająca na wgląd w surowe dane JSON pobrane z SerpData, dla celów weryfikacji i zaawansowanej analizy.
+10. **Sekcja "Opcje Eksportu Raportu"**:
+    *   **Przycisk "Pobierz Raport Interaktywny (.html)"**: Umożliwia pobranie samodzielnego pliku HTML, który wiernie odwzorowuje wygląd raportu z aplikacji.
+    *   **Przycisk "Generuj/Ukryj Raport Tekstowy (.txt)"**: Działa jak przełącznik. Kliknięcie pokazuje (lub ukrywa) pole tekstowe z raportem w formacie Markdown, idealnym do skopiowania.
 
 ## 6. Interpretacja Wyników Analizy
 
@@ -330,8 +304,9 @@ Zrozumienie wyników analizy jest kluczowe do podjęcia skutecznych działań. O
 *   **Obecność Klienta (AI Overview, Top 10 Organiczne)**: To szybki wskaźnik Twojej aktualnej pozycji. Jeśli odpowiedź brzmi "Nie", szczególnie w AI Overview, to głównym celem będzie znalezienie sposobu, aby się tam pojawić.
 *   **Aktualne źródła w AI Overview**: Dokładnie przeanalizuj te strony. Jakie treści publikują? Jaki jest ich format? Jak odpowiadają na zapytanie użytkownika? Staraj się tworzyć treści lepsze, bardziej wyczerpujące lub prezentujące unikalną perspektywę.
 *   **Możliwości dla klienta w AI Overview**: To bezpośrednie sugestie od AI. Traktuj je jako punkt wyjścia do burzy mózgów nad nowymi treściami lub optymalizacją istniejących.
-*   **Konkurenci**: Zidentyfikuj, kto jest Twoim głównym konkurentem w walce o widoczność. Odwiedź ich strony, zobacz, co robią dobrze.
-*   **Luki w Treści (PAA, Powiązane wyszukiwania)**: To kopalnia pomysłów na content. Odpowiadanie na pytania użytkowników (PAA) i pokrywanie tematów z powiązanych wyszukiwań to świetny sposób na zwiększenie relewancji Twojej strony.
+*   **Intencję Zapytania**: Czy Twoja treść odpowiada na tę intencję? Jeśli intencja jest informacyjna, strona sprzedażowa może nie być skuteczna i odwrotnie.
+*   **Sugerowane odpowiedzi na pytania PAA**: Możesz je niemal bezpośrednio wykorzystać do stworzenia sekcji FAQ na swojej stronie, co jest silnym sygnałem dla Google.
+*   **Przewagę Strategiczną**: Potraktuj te sugestie jako kreatywną burzę mózgów z ekspertem SEO. Mogą one wskazać kierunek, o którym wcześniej nie myślałeś.
 *   **Rekomendacje Działań**: Potraktuj je jako listę zadań. Zacznij od tych z najwyższym priorytetem. Nie wszystkie rekomendacje muszą być idealne – użyj własnego osądu i wiedzy o swojej branży.
 *   **Ogólne Podsumowanie**: Daje szybki przegląd sytuacji. Jeśli masz mało czasu, zacznij od tej sekcji.
 
@@ -346,7 +321,7 @@ Zrozumienie wyników analizy jest kluczowe do podjęcia skutecznych działań. O
 
 *   **Aplikacja nie uruchamia się**:
     *   Sprawdź, czy poprawnie zainstalowałeś wszystkie zależności z `requirements.txt`.
-    *   Upewnij się, że komenda `streamlit run app/main.py` jest wpisywana w terminalu, będąc w głównym folderze aplikacji.
+    *   Upewnij się, że komenda `streamlit run main.py` jest wpisywana w terminalu, będąc w głównym folderze aplikacji.
     *   Jeśli używasz środowiska wirtualnego, upewnij się, że jest aktywowane.
 *   **Błąd dotyczący kluczy API**:
     *   Sprawdź, czy plik `.env` istnieje w głównym folderze aplikacji i czy ma poprawną nazwę (bez `.template`).
@@ -360,9 +335,8 @@ Zrozumienie wyników analizy jest kluczowe do podjęcia skutecznych działań. O
 *   **Lista modeli LLM nie ładuje się**:
     *   Sprawdź klucz `OPENROUTER_API_KEY`.
     *   OpenRouter API może być chwilowo niedostępne. Spróbuj ponownie później lub wpisz ID znanego Ci modelu ręcznie.
-*   **Długi czas oczekiwania na wyniki**:
-    *   Analiza, zwłaszcza zapytania do modeli LLM, może zająć trochę czasu. Bądź cierpliwy.
-    *   Szybsze modele LLM (np. Claude Haiku) będą generalnie odpowiadać szybciej niż bardziej złożone (np. Claude Sonnet, GPT-4o).
+*   **Problem z wczytaniem pliku `.pkl`**:
+    *   Upewnij się, że plik nie jest uszkodzony i został wygenerowany przez tę samą wersję aplikacji. Pliki `.pkl` mogą być niekompatybilne między różnymi wersjami Pythona lub bibliotek.
 
 ## 8. Możliwości Rozwoju i Personalizacji (Dla Zaawansowanych)
 
