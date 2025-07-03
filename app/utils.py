@@ -1,269 +1,153 @@
+# --- START OF FILE utils.py ---
+# Wersja 2.0 - Gruntownie przebudowany w celu implementacji Zadania #1 z planu naprawczego.
+# Usunięto zbędną funkcję parse_serp_data_for_llm.
+# Funkcja format_serp_for_llm_prompt została przebudowana, aby tworzyć kompletny,
+# bogaty w informacje kontekst dla LLM bezpośrednio z surowych danych SERP.
+
 import json
+from urllib.parse import urlparse
 
-def parse_serp_data_for_llm(serp_json_string):
-    """
-    Parses the raw SERP JSON string to extract key information relevant for LLM analysis.
-    Focuses on AI Overview sources, organic results, PAA, and related searches.
-    """
+def get_domain_from_url(url):
+    """Pomocnicza funkcja do wyciągania domeny z URL."""
+    if not url:
+        return "N/A"
     try:
-        serp_data = json.loads(serp_json_string)
-    except json.JSONDecodeError:
-        print("Error decoding SERP JSON string.")
-        return {}
+        return urlparse(url).netloc.replace('www.', '')
+    except Exception:
+        return "N/A"
 
-    results = serp_data.get("results", {})
-    if not results: # Handle cases where 'results' key might be missing or null
-        return {
-            "query": serp_data.get("request", {}).get("query", "Unknown query"),
-            "ai_overview_sources": [],
-            "organic_results_titles": [],
-            "people_also_ask_questions": [],
-            "related_searches_queries": []
-        }
+def format_serp_for_llm_prompt(raw_serp_data: dict, client_domain: str) -> str:
+    """
+    Formatuje surowe dane SERP w szczegółowy, ustrukturyzowany tekst
+    przeznaczony dla zaawansowanego promptu LLM.
 
+    Args:
+        raw_serp_data: Słownik zawierający pełne, surowe dane z API SerpData.
+        client_domain: Domena klienta do analizy.
 
-    ai_overview = results.get("ai_overview", {})
-    ai_overview_sources = []
-    if ai_overview and isinstance(ai_overview, dict) and ai_overview.get("sources"):
-        for source in ai_overview.get("sources", []):
-            ai_overview_sources.append({
-                "title": source.get("title"),
-                "url": source.get("url"),
-                "snippet": source.get("snippet")
-            })
+    Returns:
+        Sformatowany string gotowy do wstawienia do promptu LLM.
+    """
+    results = raw_serp_data.get("results", {})
+    if not results:
+        return "Błąd: Brak klucza 'results' w danych SERP."
 
+    # --- Ekstrakcja kluczowych danych z zabezpieczeniami ---
+    query = results.get("query", "N/A")
+    snippets_data = results.get("snippets_data", {})
+
+    # AI Overview
+    ai_overview = snippets_data.get("ai_overview", {}) if isinstance(snippets_data, dict) else {}
+    ai_overview_text = ai_overview.get("text", "Brak wygenerowanego tekstu AI Overview.") if isinstance(ai_overview, dict) else "Brak danych AI Overview."
+    ai_overview_sources = ai_overview.get("sources", []) if isinstance(ai_overview, dict) else []
+
+    # Organic Results
     organic_results = results.get("organic_results", [])
-    organic_results_titles_urls = []
-    if organic_results:
-        for res in organic_results:
-            organic_results_titles_urls.append({
-                "title": res.get("title"),
-                "url": res.get("url"),
-                "domain": res.get("domain")
-            })
 
-    people_also_ask = results.get("people_also_ask", {})
-    people_also_ask_questions = []
-    if people_also_ask and isinstance(people_also_ask, dict) and people_also_ask.get("questions"):
-        for q_data in people_also_ask.get("questions", []):
-            if isinstance(q_data, dict): # Ensure q_data is a dictionary
-                 people_also_ask_questions.append(q_data.get("text"))
-            elif isinstance(q_data, str): # If it's just a list of strings (less common for PAA)
-                 people_also_ask_questions.append(q_data)
+    # People Also Ask
+    paa_data = snippets_data.get("people_also_ask", {}) if isinstance(snippets_data, dict) else {}
+    paa_questions = paa_data.get("questions", []) if isinstance(paa_data, dict) else []
+
+    # Related Searches
+    related_searches_data = snippets_data.get("related_searches", {}) if isinstance(snippets_data, dict) else {}
+    related_searches = related_searches_data.get("queries", []) if isinstance(related_searches_data, dict) else []
 
 
-    related_searches = results.get("related_searches", {})
-    related_searches_queries = []
-    if related_searches and isinstance(related_searches, dict) and related_searches.get("queries"):
-        related_searches_queries = related_searches.get("queries", [])
-
-
-    extracted_data = {
-        "query": results.get("query", serp_data.get("request", {}).get("query", "Unknown query")),
-        "ai_overview_sources": ai_overview_sources,
-        "organic_results": organic_results_titles_urls,
-        "people_also_ask_questions": people_also_ask_questions,
-        "related_searches_queries": related_searches_queries
-    }
-    return extracted_data
-
-
-def format_serp_for_llm_prompt(parsed_serp_data, client_domain):
-    """
-    Formats the parsed SERP data into a string suitable for an LLM prompt.
-    """
+    # --- Budowanie stringa dla promptu ---
     prompt_lines = [
-        f"Analyzing SERP for query: \"{parsed_serp_data.get('query', 'N/A')}\"",
-        f"Client's domain: {client_domain}\n"
+        "--- AI OVERVIEW ANALYSIS INPUT ---",
+        "",
+        f"**Query:** \"{query}\"",
+        f"**Client Domain:** \"{client_domain}\"",
+        "",
+        "---",
+        "",
+        "**AI Overview Main Text:**",
+        ai_overview_text,
+        "",
+        "**AI Overview Sources (with snippets):**"
     ]
 
-    prompt_lines.append("AI Overview Sources:")
-    if parsed_serp_data.get("ai_overview_sources"):
-        for i, source in enumerate(parsed_serp_data["ai_overview_sources"], 1):
-            prompt_lines.append(f"  {i}. Title: {source.get('title', 'N/A')}, URL: {source.get('url', 'N/A')}")
-            if source.get('snippet'):
-                 prompt_lines.append(f"     Snippet: {source.get('snippet')[:150]}...") # Truncate long snippets
+    if ai_overview_sources:
+        for i, source in enumerate(ai_overview_sources, 1):
+            domain = get_domain_from_url(source.get("url"))
+            prompt_lines.append(f"- Source {i}: {{title: \"{source.get('title', 'N/A')}\", domain: \"{domain}\", snippet: \"{source.get('snippet', 'N/A')}\"}}")
     else:
-        prompt_lines.append("  No AI Overview sources found or provided.")
-    prompt_lines.append("\n")
+        prompt_lines.append("- Brak źródeł AI Overview.")
 
-    prompt_lines.append("Top Organic Results (excluding client domain if present in top 10):")
-    client_domain_in_top_organic = False
-    if parsed_serp_data.get("organic_results"):
-        count = 0
-        for i, res in enumerate(parsed_serp_data["organic_results"], 1):
-            is_client = client_domain in res.get('domain', '')
-            if is_client:
-                client_domain_in_top_organic = True
-            # Display competitors, or all if client is not in top results
-            prompt_lines.append(f"  {i}. Title: {res.get('title', 'N/A')}, URL: {res.get('url', 'N/A')} {'(Client)' if is_client else ''}")
-            count+=1
-            if count >=10: # limit to top 10 for brevity in prompt
-                break
+    prompt_lines.append("\n**Top 10 Organic Results:**")
+    if organic_results:
+        for i, res in enumerate(organic_results[:10], 1): # Ogranicz do top 10
+            domain = res.get('domain', 'N/A')
+            prompt_lines.append(f"- Rank {i}: {{title: \"{res.get('title', 'N/A')}\", domain: \"{domain}\", url: \"{res.get('url', 'N/A')}\"}}")
     else:
-        prompt_lines.append("  No organic results found or provided.")
+        prompt_lines.append("- Brak wyników organicznych.")
 
-    if client_domain_in_top_organic:
-        prompt_lines.append(f"\nNote: Client domain ({client_domain}) IS present in the top organic results.")
+    prompt_lines.append("\n**People Also Ask (with answers):**")
+    if paa_questions:
+        for i, q in enumerate(paa_questions, 1):
+            question_text = q.get("text", "Brak tekstu pytania")
+            answer_text = q.get("answer", "Brak gotowej odpowiedzi")
+            answer_source = q.get("source", {}).get("domain", "N/A")
+            prompt_lines.append(f"- Question {i}: \"{question_text}\"")
+            prompt_lines.append(f"  - Answer: \"{answer_text}\" (Source: {answer_source})")
     else:
-        prompt_lines.append(f"\nNote: Client domain ({client_domain}) IS NOT present in the top organic results.")
-    prompt_lines.append("\n")
+        prompt_lines.append("- Brak pytań w sekcji People Also Ask.")
 
-
-    prompt_lines.append("People Also Ask:")
-    if parsed_serp_data.get("people_also_ask_questions"):
-        for i, q in enumerate(parsed_serp_data["people_also_ask_questions"], 1):
-            prompt_lines.append(f"  - {q}")
+    prompt_lines.append("\n**Related Searches:**")
+    if related_searches:
+        for search_term in related_searches:
+            prompt_lines.append(f"- \"{search_term}\"")
     else:
-        prompt_lines.append("  No People Also Ask questions found or provided.")
-    prompt_lines.append("\n")
+        prompt_lines.append("- Brak powiązanych wyszukiwań.")
 
-    prompt_lines.append("Related Searches:")
-    if parsed_serp_data.get("related_searches_queries"):
-        for i, q in enumerate(parsed_serp_data["related_searches_queries"], 1):
-            prompt_lines.append(f"  - {q}")
-    else:
-        prompt_lines.append("  No related searches found or provided.")
+    prompt_lines.append("\n--- END OF DATA ---")
 
     return "\n".join(prompt_lines)
 
-# Example for testing
+
 if __name__ == '__main__':
-    # This is the example result from the initial prompt
+    # Przykład użycia z realistycznymi danymi testowymi
     example_serp_json_string = """
     {
-      "search_engine": "google",
-      "location": "us",
-      "language": "en",
-      "timestamp": "2025-06-30T14:50:12.619931",
-      "search_url": null,
-      "total_results_count": null,
       "results": {
-        "query": "real estate software companies",
-        "snippets_found": [
-          "people_also_ask",
-          "related_searches",
-          "ai_overview",
-          "ads",
-          "complementary_results"
-        ],
-        "organic_results": [
-          {
-            "domain": "builtin.com",
-            "rank_absolute": 7,
-            "rank_inner": 1,
-            "title": "Real Estate Technology: Overview, Trends and 29 ...",
-            "type": "standard",
-            "url": "https://builtin.com/articles/real-estate-technology"
-          },
-          {
-            "domain": "thefinancialtechnologyreport.com",
-            "rank_absolute": 8,
-            "rank_inner": 2,
-            "title": "The Top 25 Real Estate Technology Companies of 2024",
-            "type": "standard",
-            "url": "https://thefinancialtechnologyreport.com/the-top-25-real-estate-technology-companies-of-2024/"
-          },
-          {
-            "domain": "hicronsoftware.com",
-            "rank_absolute": 15,
-            "rank_inner": 8,
-            "title": "50+ PropTech Software Companies Shaping the Industry",
-            "type": "standard",
-            "url": "https://hicronsoftware.com/blog/proptech-software-companies-shaping-real-estate/"
-          }
-        ],
+        "query": "najlepsze oprogramowanie CRM",
         "snippets_data": {
-          "ads": [],
           "ai_overview": {
-            "has_listen_button": false,
-            "rank_absolute": 1,
+            "text": "Najlepsze oprogramowanie CRM dla małych firm to takie, które oferuje zarządzanie kontaktami, automatyzację sprzedaży i wsparcie klienta. Wiele opcji, takich jak CRM Hero i TopCRM, dostarcza rankingi i porównania funkcji, pomagając w podjęciu decyzji.",
             "sources": [
-              {
-                "display_url": "The Financial Technology Report.",
-                "rank_inner": 1,
-                "snippet": "Apr 29, 2024 — Zillow is a real estate marketplace company that provides information and services related to selling, buying, renting...",
-                "title": "The Top 25 Real Estate Technology Companies of 2024",
-                "url": "https://thefinancialtechnologyreport.com/the-top-25-real-estate-technology-companies-of-2024/"
-              },
-              {
-                "display_url": "Hicron Software",
-                "rank_inner": 21,
-                "snippet": "Jan 10, 2025 —  PropTech/ Real Estate Investment Platforms * Fundrise – Gives retail investors a chance to participate in real estate...",
-                "title": "50+ PropTech Software Companies Shaping the Industry",
-                "url": "https://hicronsoftware.com/blog/proptech-software-companies-shaping-real-estate/"
-              }
-            ],
-            "status": "success",
-            "text": "Real estate software companies provide a variety of tools to streamline various aspects of the industry..."
+              {"title": "Co to jest CRM i jak działa? Przewodnik 2024", "url": "https://www.crmhero.com/guide", "snippet": "CRM, czyli Customer Relationship Management, to strategia i narzędzia do zarządzania interakcjami z klientami..."},
+              {"title": "Ranking CRM 2024 - TOP 10 systemów", "url": "https://www.topcrm.pl/ranking", "snippet": "Nasz ranking CRM na 2024 rok uwzględnia ceny, funkcje i opinie użytkowników..."}
+            ]
           },
           "people_also_ask": {
             "questions": [
-              { "text": "What is the best software for real estate management?" },
-              { "text": "What is the 7% rule in real estate?" }
-            ],
-            "rank_absolute": 9
+              {"text": "Ile kosztuje system CRM?", "answer": "Ceny systemów CRM wahają się od darmowych planów do kilkuset złotych miesięcznie.", "source": {"domain": "cennik-crm.com"}},
+              {"text": "Czy Excel to CRM?", "answer": "Choć Excel może służyć do przechowywania danych, nie posiada kluczowych funkcji CRM.", "source": {"domain": "crmhero.com"}}
+            ]
           },
           "related_searches": {
-            "queries": [
-              "real estate software companies near laredo, tx",
-              "Top real estate software companies"
-            ],
-            "rank_absolute": 21
+            "queries": ["darmowy crm dla małej firmy", "ranking crm online"]
           }
-        }
-      },
-      "request": {
-        "query": "real estate software companies"
-      },
-      "status": "success"
+        },
+        "organic_results": [
+          {"rank_inner": 1, "title": "Ranking CRM 2024 - TOP 10 systemów", "domain": "topcrm.pl", "url": "https://www.topcrm.pl/ranking"},
+          {"rank_inner": 2, "title": "Porównanie systemów CRM | mojafirma.pl", "domain": "mojafirma.pl", "url": "https://mojafirma.pl/blog/crm-comparison"}
+        ]
+      }
     }
     """
+    example_raw_data = json.loads(example_serp_json_string)
+    example_client_domain = "mojafirma.pl"
 
-    parsed_data = parse_serp_data_for_llm(example_serp_json_string)
-    print("--- Parsed SERP Data ---")
-    print(json.dumps(parsed_data, indent=2))
+    # Wywołaj nową funkcję
+    formatted_prompt = format_serp_for_llm_prompt(example_raw_data, example_client_domain)
 
-    client_domain_example = "hicronsoftware.com"
-    prompt_text = format_serp_for_llm_prompt(parsed_data, client_domain_example)
-    print("\n--- Formatted LLM Prompt ---")
-    print(prompt_text)
+    print("--- Wygenerowany, sformatowany prompt dla LLM ---")
+    print(formatted_prompt)
 
-    client_domain_example_not_present = "someotherdomain.com"
-    prompt_text_not_present = format_serp_for_llm_prompt(parsed_data, client_domain_example_not_present)
-    print("\n--- Formatted LLM Prompt (Client Not Present) ---")
-    print(prompt_text_not_present)
-
-    # Test with minimal data (e.g. only query)
-    minimal_serp_json_string = """
-    {
-        "request": {"query": "minimal query"},
-        "results": null
-    }
-    """
-    parsed_minimal_data = parse_serp_data_for_llm(minimal_serp_json_string)
-    print("\n--- Parsed Minimal SERP Data ---")
-    print(json.dumps(parsed_minimal_data, indent=2))
-    prompt_text_minimal = format_serp_for_llm_prompt(parsed_minimal_data, "anydomain.com")
-    print("\n--- Formatted LLM Prompt (Minimal Data) ---")
-    print(prompt_text_minimal)
-
-    # Test with empty results
-    empty_results_serp_json_string = """
-    {
-        "request": {"query": "empty results query"},
-        "results": {
-            "query": "empty results query",
-            "ai_overview": null,
-            "organic_results": [],
-            "people_also_ask": null,
-            "related_searches": null
-        }
-    }
-    """
-    parsed_empty_results_data = parse_serp_data_for_llm(empty_results_serp_json_string)
-    print("\n--- Parsed Empty Results SERP Data ---")
-    print(json.dumps(parsed_empty_results_data, indent=2))
-    prompt_text_empty_results = format_serp_for_llm_prompt(parsed_empty_results_data, "anydomain.com")
-    print("\n--- Formatted LLM Prompt (Empty Results Data) ---")
-    print(prompt_text_empty_results)
+    # Test z brakującymi danymi
+    print("\n\n--- Test z brakującymi danymi ---")
+    minimal_raw_data = { "results": { "query": "minimal query" } }
+    formatted_minimal_prompt = format_serp_for_llm_prompt(minimal_raw_data, "anydomain.com")
+    print(formatted_minimal_prompt)
